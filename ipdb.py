@@ -5,20 +5,57 @@ import sys
 import subprocess
 import linecache
 
-class Ipdb(bdb.Bdb, object):
 
+_pf = sys.platform.lower()
+
+if _pf == 'darwin':
+    CLEAR = 'clear'
+    def _resize_handler():
+        w = int(subprocess.check_output('tput cols', shell=True))
+        h = int(subprocess.check_output('tput lines', shell=True)) 
+        return w, h
+
+elif _pf.startswith('linux'):
+    CLEAR = 'clear'
+    def _resize_handler():
+        return map(int, subprocess.check_output('stty size', shell=True).split())
+
+elif _pf == 'win32':
+    CLEAR = 'cls'
+    def _resize_handler():
+        from ctypes import windll, create_string_buffer
+        h = windll.kernel32.GetStdHandle(-12)
+        csbi = create_string_buffer(22)
+        res = windll.kernel32.GetConsoleScreenBufferInfo(h, csbi)
+        if res:
+            import struct
+            (bufx, bufy, curx, cury, wattr, left, top, right, bottom, maxx, maxy) = struct.unpack("hhhhHhhhhhh", csbi.raw)
+            sizex = right - left + 1
+            sizey = bottom - top + 1
+        else:
+            sizex, sizey = 80, 25
+        return sizex, sizey
+
+else:
+    def _resize_handler():
+        return 80, 25
+
+
+class Ipdb(bdb.Bdb, object):
+    """ Simple, small, nteractive, console-based Python debugger."""
     def __init__(self):
         self._currout = " " + repr(None)
         super(Ipdb, self).__init__()
 
 
     def handle_resize(self):
-        self._w = int(subprocess.check_output('tput cols', shell=True))
-        self._h = int(subprocess.check_output('tput lines', shell=True))
+        self._w, self._h = _resize_handler()
+        #self._w = int(subprocess.check_output('tput cols', shell=True))
+        #self._h = int(subprocess.check_output('tput lines', shell=True))
 
 
     def update_ui(self):
-        os.system('clear')
+        subprocess.call(CLEAR)
         self.handle_resize()
         el = " " * (self._w - 2) + "\n"
         self.ui = "{}{}{}{}{}".format(el, " [curr]" + self._currout + (" " * (self._w - 7 - len(self._currout))) + "\n", " [prev]" + self._prev + (" " * (self._w - 7 - len(self._prev))), el, " :: ")
@@ -29,7 +66,7 @@ class Ipdb(bdb.Bdb, object):
         breaklist = self.get_file_breaks(filename)
         for lineno in range(first, last+1):
             line = linecache.getline(filename, lineno,
-                                     self.curframe.f_globals)
+                    self.curframe.f_globals)
             if not line:
                 print '[EOF]'
                 break
@@ -42,9 +79,9 @@ class Ipdb(bdb.Bdb, object):
                     s = s + '->'
                 print s + '\t' + line,
                 self.lineno = lineno
+        print self._h
+        print " |\n" * (self._h - 10- (lineno - first))     
 
-        print " |\n" * (15 - (lineno - first))     
-    
     def user_call(self, frame, args):
         name = frame.f_code.co_name
         if not name: name = '???'
@@ -86,7 +123,6 @@ class Ipdb(bdb.Bdb, object):
             self.prompt(f)
 
 
-
     def do_quit(self, args):
         self.set_quit()
     do_q = do_quit
@@ -97,6 +133,7 @@ class Ipdb(bdb.Bdb, object):
         cf = stack[idx][0]
         self.set_next(cf)
     do_n = do_next
+
 
 def r():
     Ipdb().set_trace(sys._getframe().f_back)
