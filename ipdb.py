@@ -9,15 +9,11 @@ import linecache
 _out = sys.stdout
 _pf = sys.platform.lower()
 _W = 80
-_H = 25
+_H = 15
 
-_prompt = """\
-  [ ]next  [s]tep-in  [r]eturn
-  [w]atch  [u]nwatch  [v]ars
-  [q]uit
-
-"""
-# [v]ariables on/off [l]ist code on/off """
+_prompt = """ [ ]next [s]tep-in [r]eturn [w]atch [u]nwatch [v]ars 
+ [q]uit
+ $ """
 
 _banner = """
  > Minimal Interactive Python Debugger
@@ -73,24 +69,29 @@ class Ipdb(bdb.Bdb, object):
         self.handle_resize()
         el = " " * (self._w - 2) + "\n"
         self.ui = "%s" % (" previous>" + self._prev + (" " * (self._w - 10 - len(self._prev))))
-        
-        for watch in self._watches:
-            if watch in self.curframe.f_locals:
-                watch_val = repr(self.curframe.f_locals[watch])
-                self.ui +=  "%s" % (" watching> " + watch + ": " + watch_val + (" " * (self._w - 13 - (len(watch) + len(watch_val)))))
+       
+        if any([watch in self.curframe.f_locals for watch in self._watches]):
+            self.ui += "\n\n"
+            for watch in self._watches:
+                if watch in self.curframe.f_locals:
+                    watch_val = repr(self.curframe.f_locals[watch])
+                    self.ui +=  "%s" % ((" watching> %7s" % watch) + " : " + watch_val + (" " * (self._w - 21 - (len(watch_val)))))
         
         first = max(1, self.curframe.f_lineno - 5)
-        last = first + 10
+        last = first + (self._h / 2)
 
         if self._show_vars:
+            self.ui += "\n\n"
             for vari in self._vars:
                 if vari in self.curframe.f_locals:
                     var_val = repr(self.curframe.f_locals[vari])
-                    self.ui +=  "%s" % (" variable> " + vari + ": " + var_val + (" " * (self._w - 13 - (len(vari) + len(var_val)))))
+                    self.ui +=  "%s" % (("   locals> %7s" % vari) + " : " + var_val + (" " * (self._w - 21 - ( len(var_val)))))
 
         self.ui += "\n"
         print >>_out, _banner
-        print >>_out, " (prev) %s" % self.curframe.f_back.f_code.co_name
+        prev = self.curframe.f_back
+
+        print >>_out, " (prev) %s" % (prev.f_code.co_name if prev is not None else repr(None))
         print >>_out, " (curr) %s\n" % self.curframe.f_code.co_name
         
         first = max(1, self.curframe.f_lineno - 5)
@@ -113,7 +114,7 @@ class Ipdb(bdb.Bdb, object):
                 print >>_out, s + '\t' + line,
                 self.lineno = lineno
         
-        print >>_out, "\n" * (10 - (lineno - first))     
+        print >>_out, " ||\n" * ((self._h / 2) - (lineno - first))     
         print >>_out, self.ui
 
     def user_call(self, frame, args):
@@ -202,7 +203,7 @@ class Ipdb(bdb.Bdb, object):
         return True
     do_u = do_watch
 
-def r():
+def track():
     try:
         Ipdb().set_trace(sys._getframe().f_back)
     except AttributeError:

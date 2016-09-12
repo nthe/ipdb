@@ -1,5 +1,4 @@
 import ipdb
-import pdb
 
 
 def do_max(_array):
@@ -17,13 +16,31 @@ def do_sum(_array):
     return val
 
 
+class CompletelyUselessClass(object):
+
+    def __init__(self, _something):
+        self._something = _something
+        self._v = 2 * 3
+
+    def __call__(self):
+        print repr(self)
+    
+    @staticmethod
+    def calc(ins):
+        for prop in ins.__dict__:
+            print repr(prop)
+
 def main():
-    ipdb.r()
-    #pdb.set_trace()
+    ipdb.track()
     array = [1, 2, 3, 4]
+    
     sm = do_sum(array)
+    cuc = CompletelyUselessClass(4)
     mx = do_max(array)
-    v = mx / sm
+    v = mx / float(sm)
+    cuc()
+    cuc.calc(cuc)
+
     return v
 
 if __name__ == "__main__":
