@@ -1,4 +1,5 @@
 import bdb
+import time
 import os
 import sys
 import subprocess
@@ -10,9 +11,17 @@ _pf = sys.platform.lower()
 _W = 80
 _H = 25
 
-_prompt = """ [ |n]ext [s]tep-in [r]eturn [w]atch [q]uit """
+_prompt = """\
+  [ ]next  [s]tep-in  [r]eturn
+  [w]atch  [u]nwatch  [v]ars
+  [q]uit
+
+"""
 # [v]ariables on/off [l]ist code on/off """
 
+_banner = """
+ > Minimal Interactive Python Debugger
+ """
 
 if _pf == 'darwin':
     CLEAR = 'clear'
@@ -53,35 +62,41 @@ class Ipdb(bdb.Bdb, object):
         self._currout = " " + repr(None)
         self._vars = []
         self._watches = []
+        self._show_vars = True
         super(Ipdb, self).__init__()
-
 
     def handle_resize(self):
         self._w, self._h = _resize_handler()
-
 
     def update_ui(self):
         os.system(CLEAR)
         self.handle_resize()
         el = " " * (self._w - 2) + "\n"
         self.ui = "%s" % (" previous>" + self._prev + (" " * (self._w - 10 - len(self._prev))))
-        self.ui += "\n"
+        
         for watch in self._watches:
             if watch in self.curframe.f_locals:
-                self.ui +=  "%s" % (" watching> " + watch + ": " + repr(self.curframe.f_locals[watch]) + (" " * (self._w - 11 - (len(watch) + len(self.curframe.f_locals[watch])))))
-        self.ui += "\n"
+                watch_val = repr(self.curframe.f_locals[watch])
+                self.ui +=  "%s" % (" watching> " + watch + ": " + watch_val + (" " * (self._w - 13 - (len(watch) + len(watch_val)))))
+        
         first = max(1, self.curframe.f_lineno - 5)
         last = first + 10
 
-        for vari in self._vars:
-            if vari in self.curframe.f_locals:
-                var_val = repr(self.curframe.f_locals[vari])
-            else:
-                var_val = "<not_initialized>"
-            self.ui +=  "%s" % (" variable> " + vari + ": " + var_val + (" " * (self._w - 13 - (len(vari) + len(var_val)))))
+        if self._show_vars:
+            for vari in self._vars:
+                if vari in self.curframe.f_locals:
+                    var_val = repr(self.curframe.f_locals[vari])
+                    self.ui +=  "%s" % (" variable> " + vari + ": " + var_val + (" " * (self._w - 13 - (len(vari) + len(var_val)))))
+
+        self.ui += "\n"
+        print >>_out, _banner
+        print >>_out, " (prev) %s" % self.curframe.f_back.f_code.co_name
+        print >>_out, " (curr) %s\n" % self.curframe.f_code.co_name
+        
         first = max(1, self.curframe.f_lineno - 5)
         filename = self.curframe.f_code.co_filename
         breaklist = self.get_file_breaks(filename)
+        
         for lineno in range(first, last+1):
             line = linecache.getline(filename, lineno,
                     self.curframe.f_globals)
@@ -100,9 +115,6 @@ class Ipdb(bdb.Bdb, object):
         
         print >>_out, "\n" * (10 - (lineno - first))     
         print >>_out, self.ui
-        #print >>_out, self.curframe.f_locals
-        #print >>_out, self.curframe.f_globals
-
 
     def user_call(self, frame, args):
         self._vars = frame.f_code.co_varnames
@@ -111,7 +123,6 @@ class Ipdb(bdb.Bdb, object):
         self._prev = self._currout
         self._currout = ' called %s, args: %s' % (name, args)
         self.prompt(frame)
-
 
     def user_line(self, frame):
         self._vars = frame.f_code.co_varnames
@@ -123,53 +134,73 @@ class Ipdb(bdb.Bdb, object):
         self._currout = ' executed [%s] %s' % (frame.f_lineno, line.strip())
         self.prompt(frame)
 
-
     def user_return(self, frame, retval):
         self._prev = self._currout
         self._currout = ' returned ' + repr(retval)
         self.prompt(frame)
 
-
     def user_exception(self, frame, exc_stuff):
         self._currout = ' raised exception %s %s %s' %  exc_stuff
         self.prompt(frame)
-
 
     def prompt(self, f):
         self.curframe = f
         self.update_ui()
         cmd = raw_input(_prompt) 
+        
         try:
-            getattr(self, 'do_' + cmd)()
+            if cmd is not None:
+                getattr(self, 'do_' + cmd)()
 
-        except AttributeError:
+        except AttributeError as e:
             self.prompt(f)
-
 
     def do_quit(self):
         self.set_quit()
+        return True
     do_q = do_quit
 
+    def do_jump(self):
+        line = raw_input(" (enter line) ")
+        print self.curframe.f_lineno
+        if int(line) > self.curframe.f_lineno:
+            
+            pass
+        return True
+    do_j = do_jump
 
     def do_next(self):
         self.set_next(self.curframe)
-    do_n = do_next
+        return True
     do_ = do_next
 
     def do_step(self):
         self.set_step()
+        return True
     do_s = do_step
 
+    def do_vars(self):
+        self._show_vars = not self._show_vars
+        return True
+    do_v = do_vars
 
     def do_return(self):
         self.set_return(self.curframe)
+        return True
     do_r = do_return
 
     def do_watch(self):
-        variable = raw_input("\n (enter variable name) ")
-        if variable in self.curframe.f_locals:
-            self._watches.append(variable)
+        variable = raw_input(" (enter variable name) ")
+        self._watches.append(variable)
+        return True
     do_w = do_watch
+
+    def do_unwatch(self):
+        variable = raw_input(" (enter variable name) ")
+        if variable in self._watched:
+            self._watches.pop(_self.watches.index(variable))
+        return True
+    do_u = do_watch
 
 def r():
     try:
@@ -177,3 +208,5 @@ def r():
     except AttributeError:
         print >>_out, " bye."
         
+    except bdb.BdbQuit:
+        print >>_out, " bye."
