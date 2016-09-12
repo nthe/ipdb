@@ -1,12 +1,15 @@
 import bdb
 import os
-import inspect
 import sys
 import subprocess
 import linecache
 
 
+_out = sys.stdout
 _pf = sys.platform.lower()
+_W = 80
+_H = 25
+
 
 if _pf == 'darwin':
     CLEAR = 'clear'
@@ -33,12 +36,12 @@ elif _pf == 'win32':
             sizex = right - left + 1
             sizey = bottom - top + 1
         else:
-            sizex, sizey = 80, 25
+            sizex, sizey = _W, _H
         return sizex, sizey
 
 else:
     def _resize_handler():
-        return 80, 25
+        return _W, _H
 
 
 class Ipdb(bdb.Bdb, object):
@@ -50,25 +53,23 @@ class Ipdb(bdb.Bdb, object):
 
     def handle_resize(self):
         self._w, self._h = _resize_handler()
-        #self._w = int(subprocess.check_output('tput cols', shell=True))
-        #self._h = int(subprocess.check_output('tput lines', shell=True))
 
 
     def update_ui(self):
-        subprocess.call(CLEAR)
+        os.system(CLEAR)
         self.handle_resize()
         el = " " * (self._w - 2) + "\n"
-        self.ui = "{}{}{}{}{}".format(el, " [curr]" + self._currout + (" " * (self._w - 7 - len(self._currout))) + "\n", " [prev]" + self._prev + (" " * (self._w - 7 - len(self._prev))), el, " :: ")
-        print
+        self.ui = "%s" % (" previous> " + self._prev + (" " * (self._w - 7 - len(self._prev))))
         first = max(1, self.curframe.f_lineno - 5)
-        last = first + 15
+        last = first + 10
+
         filename = self.curframe.f_code.co_filename
         breaklist = self.get_file_breaks(filename)
         for lineno in range(first, last+1):
             line = linecache.getline(filename, lineno,
                     self.curframe.f_globals)
             if not line:
-                print '[EOF]'
+                print >>_out, '[EOF]'
                 break
             else:
                 s = repr(lineno).rjust(3)
@@ -77,16 +78,18 @@ class Ipdb(bdb.Bdb, object):
                 else: s = s + ' '
                 if lineno == self.curframe.f_lineno:
                     s = s + '->'
-                print s + '\t' + line,
+                print >>_out, s + '\t' + line,
                 self.lineno = lineno
-        print self._h
-        print " |\n" * (self._h - 10- (lineno - first))     
+        
+        print >>_out, "\n" * (10 - (lineno - first))     
+        print >>_out, self.ui
+
 
     def user_call(self, frame, args):
         name = frame.f_code.co_name
         if not name: name = '???'
         self._prev = self._currout
-        self._currout = ' call: {} {}'.format(name, args)
+        self._currout = ' call: %s %s' % (name, args)
         self.prompt(frame)
 
 
@@ -96,7 +99,7 @@ class Ipdb(bdb.Bdb, object):
         fn = self.canonic(frame.f_code.co_filename)
         line = linecache.getline(fn, frame.f_lineno, frame.f_globals)
         self._prev = self._currout
-        self._currout = ' {}: {}'.format(frame.f_lineno, line.strip())
+        self._currout = ' %s: %s' % (frame.f_lineno, line.strip())
         self.prompt(frame)
 
 
@@ -114,7 +117,7 @@ class Ipdb(bdb.Bdb, object):
     def prompt(self, f):
         self.curframe = f
         self.update_ui()
-        cmd = raw_input(self.ui)
+        cmd = raw_input(" [n]ext  [s]tep in  [r]eturn  [q]uit ")
 
         try:
             getattr(self, 'do_' + cmd)(f)
@@ -135,6 +138,21 @@ class Ipdb(bdb.Bdb, object):
     do_n = do_next
 
 
-def r():
-    Ipdb().set_trace(sys._getframe().f_back)
+    def do_step(self, args):
+        self.set_step()
+    do_s = do_step
 
+
+    def do_return(self, f):
+        stack, idx = self.get_stack(f, None)
+        cf = stack[idx][0]
+        self.set_return(cf)
+    do_r = do_return
+
+
+def r():
+    try:
+        Ipdb().set_trace(sys._getframe().f_back)
+    except AttributeError:
+        print >>_out, " bye."
+        
