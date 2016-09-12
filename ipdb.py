@@ -10,6 +10,9 @@ _pf = sys.platform.lower()
 _W = 80
 _H = 25
 
+_prompt = """ [ |n]ext [s]tep-in [r]eturn [w]atch [q]uit """
+# [v]ariables on/off [l]ist code on/off """
+
 
 if _pf == 'darwin':
     CLEAR = 'clear'
@@ -48,6 +51,8 @@ class Ipdb(bdb.Bdb, object):
     """ Simple, small, nteractive, console-based Python debugger."""
     def __init__(self):
         self._currout = " " + repr(None)
+        self._vars = []
+        self._watches = []
         super(Ipdb, self).__init__()
 
 
@@ -59,10 +64,22 @@ class Ipdb(bdb.Bdb, object):
         os.system(CLEAR)
         self.handle_resize()
         el = " " * (self._w - 2) + "\n"
-        self.ui = "%s" % (" previous> " + self._prev + (" " * (self._w - 7 - len(self._prev))))
+        self.ui = "%s" % (" previous>" + self._prev + (" " * (self._w - 10 - len(self._prev))))
+        self.ui += "\n"
+        for watch in self._watches:
+            if watch in self.curframe.f_locals:
+                self.ui +=  "%s" % (" watching> " + watch + ": " + repr(self.curframe.f_locals[watch]) + (" " * (self._w - 11 - (len(watch) + len(self.curframe.f_locals[watch])))))
+        self.ui += "\n"
         first = max(1, self.curframe.f_lineno - 5)
         last = first + 10
 
+        for vari in self._vars:
+            if vari in self.curframe.f_locals:
+                var_val = repr(self.curframe.f_locals[vari])
+            else:
+                var_val = "<not_initialized>"
+            self.ui +=  "%s" % (" variable> " + vari + ": " + var_val + (" " * (self._w - 13 - (len(vari) + len(var_val)))))
+        first = max(1, self.curframe.f_lineno - 5)
         filename = self.curframe.f_code.co_filename
         breaklist = self.get_file_breaks(filename)
         for lineno in range(first, last+1):
@@ -83,72 +100,76 @@ class Ipdb(bdb.Bdb, object):
         
         print >>_out, "\n" * (10 - (lineno - first))     
         print >>_out, self.ui
+        #print >>_out, self.curframe.f_locals
+        #print >>_out, self.curframe.f_globals
 
 
     def user_call(self, frame, args):
+        self._vars = frame.f_code.co_varnames
         name = frame.f_code.co_name
         if not name: name = '???'
         self._prev = self._currout
-        self._currout = ' call: %s %s' % (name, args)
+        self._currout = ' called %s, args: %s' % (name, args)
         self.prompt(frame)
 
 
     def user_line(self, frame):
+        self._vars = frame.f_code.co_varnames
         name = frame.f_code.co_name
         if not name: name = '???'
         fn = self.canonic(frame.f_code.co_filename)
         line = linecache.getline(fn, frame.f_lineno, frame.f_globals)
         self._prev = self._currout
-        self._currout = ' %s: %s' % (frame.f_lineno, line.strip())
+        self._currout = ' executed [%s] %s' % (frame.f_lineno, line.strip())
         self.prompt(frame)
 
 
     def user_return(self, frame, retval):
         self._prev = self._currout
-        self._currout = ' retn: ' + repr(retval)
+        self._currout = ' returned ' + repr(retval)
         self.prompt(frame)
 
 
     def user_exception(self, frame, exc_stuff):
-        self._currout = ' expt: ' +  exc_stuff
+        self._currout = ' raised exception %s %s %s' %  exc_stuff
         self.prompt(frame)
 
 
     def prompt(self, f):
         self.curframe = f
         self.update_ui()
-        cmd = raw_input(" [n]ext  [s]tep in  [r]eturn  [q]uit ")
-
+        cmd = raw_input(_prompt) 
         try:
-            getattr(self, 'do_' + cmd)(f)
+            getattr(self, 'do_' + cmd)()
 
         except AttributeError:
             self.prompt(f)
 
 
-    def do_quit(self, args):
+    def do_quit(self):
         self.set_quit()
     do_q = do_quit
 
 
-    def do_next(self, f):
-        stack, idx = self.get_stack(f, None)
-        cf = stack[idx][0]
-        self.set_next(cf)
+    def do_next(self):
+        self.set_next(self.curframe)
     do_n = do_next
+    do_ = do_next
 
-
-    def do_step(self, args):
+    def do_step(self):
         self.set_step()
     do_s = do_step
 
 
-    def do_return(self, f):
-        stack, idx = self.get_stack(f, None)
-        cf = stack[idx][0]
-        self.set_return(cf)
+    def do_return(self):
+        self.set_return(self.curframe)
     do_r = do_return
 
+    def do_watch(self):
+        variable = raw_input("\n (enter variable name) ")
+        if variable in self.curframe.f_locals:
+            self._watches.append(variable)
+    do_w = do_watch
 
 def r():
     try:
