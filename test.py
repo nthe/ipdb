@@ -1,5 +1,7 @@
 import ipdb
+import pdb
 
+#pdb.set_trace()
 
 def do_max(_array):
     val = 0
@@ -31,9 +33,7 @@ class CompletelyUselessClass(object):
             print repr(prop)
 
 def main():
-    ipdb.track()
     array = [1, 2, 3, 4]
-    
     sm = do_sum(array)
     cuc = CompletelyUselessClass(4)
     mx = do_max(array)
