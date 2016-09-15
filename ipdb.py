@@ -5,24 +5,46 @@ import os
 import sys
 import subprocess
 import linecache
+from collections import deque
+import cStringIO
+
+_stream = cStringIO.StringIO()
+
+# TODO: 
+# - call dispatch doesn't show args
+# - python repl for code of block
+# - - proper output capture / redirection
 
 _out = sys.stdout
+_in = sys.stdin
 _pf = sys.platform.lower()
 _W = 80
 _H = 35
+_max_output_buffer_size = 100
+_code_section_height = 20
 
-_prompt = """\
- [ ]next [s]tep-in [r]eturn [w]atch [u]nwatch  [v]ars 
- [a]uto  [j]ump    [st]ack  [l]og   [c]ontinue [q]uit
- $ """
+_small_help = """\
+  [ ]next  [s]tep-in  [r]eturn  [c]ontinue  [q]uit
+"""
 
-_banner = """
- > Minimal Interactive Python Debugger
+_full_help = """\
+ [ ]next (enter pressed)    Evaluate current line and go to next line.
+ [q]uit                     Leave debugger.
+ [s]tep-in                  Step inside if callable, else go to next line.
+ [r]eturn                   Return from call to outer frame.
+ [j]ump [<file>] <line>     Jump to line in current file
+ [c]ontinue                 Continue evaluation of file, stop on break(s).
+ [w]atch <variable>         Add local 'variable' to watches.
+ [u]n-watch <variable>      Remove local 'variable' from watches.
+ [o]utput                   Show / hide output (replaces whole ui).
+ [v]ars                     Show / hide local variables.
+ [st]ack                    Show / hide current stack of stack frames.
+ [co]de                     Show / hide code display.
+ [h]elp                     Display small / large help panel.
  """
 
 if _pf == 'darwin':
     CLEAR = 'clear'
-
 
     def _resize_handler():
         w = int(subprocess.check_output('tput cols', shell=True))
@@ -32,13 +54,11 @@ if _pf == 'darwin':
 elif _pf.startswith('linux'):
     CLEAR = 'clear'
 
-
     def _resize_handler():
         return map(int, subprocess.check_output('stty size', shell=True).split())
 
 elif _pf == 'win32':
     CLEAR = 'cls'
-
 
     def _resize_handler():
         from ctypes import windll, create_string_buffer
@@ -67,9 +87,13 @@ class Ipdb(bdb.Bdb, object):
         self._curr = " " + repr(None)
         self._vars = []
         self._watches = []
+        self._output_buffer = deque([], maxlen=_max_output_buffer_size)
         self._error_msg = repr(None)
         self._show_vars = False
         self._show_stack = False
+        self._show_code = True
+        self._show_help = False
+        self._show_output = False
         self._wait = False
         self._jumping = False
         self._jump_line_no = None
@@ -96,73 +120,75 @@ class Ipdb(bdb.Bdb, object):
     def update_ui(self):
         os.system(CLEAR)
         self.handle_resize()
+        print 
+        if not self._show_output:
+            print >> _out, "%s" % (" previous >" + self._prev)
+            if not self._show_code:
+                print >> _out, "%s" % ("  current >" + self._curr)
 
-        self.ui = "%s" % (" previous>" + self._prev + (" " * (self._w - 10 - len(self._prev))))
+            if any([watch in self.curframe.f_locals for watch in self._watches]):
+                for watch in self._watches:
+                    if watch in self.curframe.f_locals:
+                        watch_val = repr(self.curframe.f_locals[watch])
+                        print >> _out, "%s" % ((" watching > %7s" % watch) + " : " + watch_val)
 
-        if any([watch in self.curframe.f_locals for watch in self._watches]):
-            self.ui += "\n\n"
-            for watch in self._watches:
-                if watch in self.curframe.f_locals:
-                    watch_val = repr(self.curframe.f_locals[watch])
-                    self.ui += "%s" % (
-                        (" watching> %7s" % watch) + " : " + watch_val + (" " * (self._w - 21 - (len(watch_val)))))
+            if self._show_vars:
+                i = 0
+                for vari in self._vars:
+                    if vari in self.curframe.f_locals:
+                        label = "locals" if i == 0 else "      "
+                        var_val = repr(self.curframe.f_locals[vari])
+                        print >> _out, "%s" % (("   %s > %7s" % (label, vari)) + " : " + var_val)
+                        i += 1
 
-        first = max(1, self.curframe.f_lineno - 5)
-        last = first + (self._h / 2)
+            if self._show_stack:
+                rec = self.curframe
+                i = 0
+                while rec.f_back:
+                    label = "stack" if i == 0 else "     "
+                    print >> _out, "    %s > %7s" % (label, str(rec.f_lineno)) + " : " + self.get_line(rec.f_lineno, rec.f_code.co_filename).strip()
+                    rec = rec.f_back
+                    i += 1
 
-        if self._show_vars:
-            self.ui += "\n\n"
-            for vari in self._vars:
-                if vari in self.curframe.f_locals:
-                    var_val = repr(self.curframe.f_locals[vari])
-                    self.ui += "%s" % (
-                        ("   locals> %7s" % vari) + " : " + var_val + (" " * (self._w - 21 - (len(var_val)))))
+            print >> _out, "    error > %s\n" % self._error_msg
+            print >> _out, _full_help if self._show_help else _small_help
+            prev = self.curframe.f_back
 
-        self.ui += "\n"
-        print >> _out, _banner
-        prev = self.curframe.f_back
+            if self._show_code:
+                first = max(1, self.curframe.f_lineno - (_code_section_height / 2))
+                last = first + _code_section_height
+                filename = self.curframe.f_code.co_filename
+                break_list = self.get_file_breaks(filename)
 
-        print >> _out, " (prev) %s" % (prev.f_code.co_name if prev is not None else repr(None))
-        print >> _out, " (curr) %s\n" % self.curframe.f_code.co_name
+                for line_no in range(first, last + 1):
+                    line = self.get_line(line_no)
+                    if not line:
+                        print >> _out, '[EOF]'
+                        break
+                    else:
+                        s = repr(line_no).rjust(3)
+                        if len(s) < 4:
+                            s += ' '
+                        if line_no in break_list:
+                            s += 'B'
+                        else:
+                            s += ' '
+                        if line_no == self.curframe.f_lineno:
+                            s += '~>'
+                        print >> _out, s + '\t' + line,
+                        self.lino_no = line_no
 
-        first = max(1, self.curframe.f_lineno - 5)
-        filename = self.curframe.f_code.co_filename
-        break_list = self.get_file_breaks(filename)
-
-        for line_no in range(first, last + 1):
-            line = self.get_line(line_no)
-            if not line:
-                print >> _out, '[EOF]'
-                break
-            else:
-                s = repr(line_no).rjust(3)
-                if len(s) < 4:
-                    s += ' '
-                if line_no in break_list:
-                    s += 'B'
-                else:
-                    s += ' '
-                if line_no == self.curframe.f_lineno:
-                    s += '->'
-                print >> _out, s + '\t' + line,
-                self.lino_no = line_no
-
-        print >> _out, " ||\n" * ((self._h / 2) - (self.lino_no - first))
-        
-        if self._show_stack:
-            self.ui += "\n"
-            rec = self.curframe
-            while rec.f_back:
-                self.ui += "    stack> " + str(rec.f_lineno) + " : " + self.get_line(rec.f_lineno, rec.f_code.co_filename).strip() + "\n"
-                rec = rec.f_back
-        
-        print >> _out, self.ui
-        print >> _out, " <error> %s\n" % self._error_msg
+            print 
+            #print >> _out, self._output_buffer
+        else:
+            print >> _out, "not implemented, yet."
 
     def jump_handler(self, frame):
         c_file = self.canonic(frame.f_code.co_filename)
+        print c_file, self._jump_file, frame.f_lineno, self._jump_line_no
         if frame.f_lineno == self._jump_line_no and c_file == self._jump_file:
             self._jumping = False
+        self.set_step()
         return not self._jumping
 
     def user_call(self, frame, args):
@@ -221,14 +247,58 @@ class Ipdb(bdb.Bdb, object):
     def prompt(self, f):
         self.curframe = f
         self.update_ui()
-        args = raw_input(_prompt)
+        args = raw_input(" $ ")
+        line = args
         args = args.split(" ")
         cmd = args.pop(0)
         try:
             if cmd is not None:
                 getattr(self, 'do_' + cmd)(*args)
         except AttributeError:
-            self.prompt(f)
+            try:
+                print >> _out
+                self.execute(line)
+                if "print" in line:
+                    raw_input('\n\t< end >')
+                self.prompt(f)
+            except Exception as e:
+                self.prompt(f)
+        finally:
+            pass
+
+    def displayhook(self, obj):
+        if obj is not None:
+            print repr(obj)
+
+    def execute(self, line):
+        locals = self.curframe.f_locals
+        globals = self.curframe.f_globals
+        try:
+            code = compile(line + '\n', '<stdin>', 'single')
+            save_stdout = sys.stdout
+            save_stdin = sys.stdin
+            save_displayhook = sys.displayhook
+            try:
+                sys.stdin = _in
+                sys.stdout = _out
+                sys.displayhook = self.displayhook
+                exec code in globals, locals
+            finally:
+                sys.stdout = save_stdout
+                sys.stdin = save_stdin
+                sys.displayhook = save_displayhook
+        except:
+            t, v = sys.exc_info()[:2]
+            if type(t) == type(''):
+                exc_type_name = t
+            else: exc_type_name = t.__name__
+            print >>_out, '***', exc_type_name + ':', v
+
+    def do_code(self, *args):
+        self._show_code = not self._show_code
+        self.prompt(self.curframe)
+
+    do_co = do_code
 
     def do_clear(self, *args):
         pass
@@ -237,6 +307,12 @@ class Ipdb(bdb.Bdb, object):
         self.set_continue()
 
     do_c = do_continue
+
+    def do_help(self, *args):
+        self._show_help = not self._show_help
+        self.prompt(self.curframe)
+
+    do_h = do_help
 
     def do_quit(self, *args):
         self.set_quit()
@@ -289,6 +365,12 @@ class Ipdb(bdb.Bdb, object):
         self.prompt(self.curframe)
 
     do_v = do_vars
+    
+    def do_output(self, *args):
+        self._show_output = not self._show_output
+        self.prompt(self.curframe)
+
+    do_o = do_output
 
     def do_return(self, *args):
         self.set_return(self.curframe)
@@ -348,3 +430,4 @@ if __name__ == "__main__":
         print " usage: python {} <script.py>".format(__file__)
         sys.exit(1)
     run(sys.argv[1])
+

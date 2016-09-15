@@ -1,7 +1,7 @@
-import ipdb
-import pdb
 
-#pdb.set_trace()
+# commentary
+# TODO: nothing
+# ipdb: or other token
 
 def do_max(_array):
     val = 0
@@ -35,9 +35,16 @@ class CompletelyUselessClass(object):
 def main():
     array = [1, 2, 3, 4]
     sm = do_sum(array)
+    print "output"
     cuc = CompletelyUselessClass(4)
     mx = do_max(array)
     v = mx / float(sm)
+    print """
+ something 
+ over
+ several
+ lines
+"""
     cuc()
     cuc.calc(cuc)
 
