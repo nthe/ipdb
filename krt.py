@@ -1,18 +1,17 @@
 #! /usr/bin/env python
 
+from time import sleep
 import bdb
 import sys
 import subprocess
+import cStringIO
 from linecache import getline
 
 __all__ = ['run', 'track']
 __version__ = 0.1
 __author__ = "nthe | Juraj Onuska | 2016"
 
-# TODO:
-# - proper repl
-# - handle prints / outputs
-
+_obuff = cStringIO.StringIO()
 _out = sys.stdout
 _in = sys.stdin
 _pf = sys.platform.lower()
@@ -22,25 +21,59 @@ _max_output_buffer_size = 100
 _code_section_height = 20
 
 _small_help = """\
-  [ ]next  [s]tep-in  [r]eturn  [c]ontinue  [q]uit"""
+[ ]next  [s]tep-in  [r]eturn  [c]ontinue  [h]elp   [o]utput  [q]uit"""
 
 _full_help = """
 
  [ ]next (enter pressed)    Evaluate current line and go to next line.
- [q]uit                     Leave debugger.
  [s]tep-in                  Step inside if callable, else go to next line.
  [r]eturn                   Return from call to outer frame.
- [j]ump [<file>] <line>     Jump to line in current file
- [c]ontinue                 Continue evaluation of file, stop on break(s).
+
+ [j]ump [<file>] ['disp'] <line> <verbose>    
+
+                            Jump to line in current file. Setting verbose to True or 1
+                            will perform jump in 'visible' mode. This mode can take
+                            certain amount of time to complete. Consider turning off
+                            code display.
+                            
+                            When 'disp' is stated, the number refers to dispatch number,
+                            counted from beginning of program evaluation. Using dispatch
+                            jumping in combination with line jumping will NOT work.
+
+                            Use '.' as reference to currently debugged file.
+
+                            Examples:
+                                $ jump . 20
+                                $ jump disp 3000 True
+                                $ jump 20
+                                $ jump disp 300
+        
+ [c]ontinue                 Continue evaluation of file.
  [w]atch <variable>         Add local 'variable' to watches.
  [u]n-watch <variable>      Remove local 'variable' from watches.
- [o]utput                   Show / hide output (replaces whole ui).
+ [o]utput                   Show / hide output of debugged program (replaces whole ui).
  [v]ars                     Show / hide local variables.
  [st]ack                    Show / hide current stack of stack frames.
  [co]de                     Show / hide code display.
- [h]elp                     Display small / large help panel."""
+ [re]size                   Adjust number of lines of code display.
+ [h]elp                     Display small / large help panel.
+ [q]uit                     Leave debugger.
+"""
+
+def unix_prompter():
+    curses.filter()
+    stdscr = curses.initscr()
+    curses.noecho()
+    curses.cbreak()
+    k = stdscr.getch()
+    curses.nocbreak()
+    curses.echo()
+    curses.endwin()
+    return k
 
 if _pf == 'darwin':
+    import curses
+    prompter = unix_prompter
     CLEAR = 'clear'
 
     def _resize_handler():
@@ -92,11 +125,15 @@ class KRT(bdb.Bdb, object):
         self._show_output = False
         self._wait = False
         self._jumping = False
+        self._jump_to_dispatch = False
+        self._jump_to_dispatch_id = 0
         self._jump_line_no = None
         self._jump_file = None
+        self._verbose_jump = False
         self._scriptfile = None
         self.curframe = None
         self._prev = None
+        self._dispatch_counter = 0
         self._w = 80
         self._h = 25
         self._delimiter = ""
@@ -116,16 +153,17 @@ class KRT(bdb.Bdb, object):
     def update_ui(self):
         subprocess.Popen([CLEAR], shell=True)
         self.handle_resize()
-        print 
-        print >> _out, "      KRT >  ",
-        print >> _out, _full_help if self._show_help else _small_help
-        print 
+        print >> _out 
         if not self._show_output:
+            print >> _out, "      KRT >",
+            print >> _out, _full_help if self._show_help else _small_help
+    
             if any([watch in self.curframe.f_locals for watch in self._watches]):
+                print >> _out, self._delimiter
                 for watch in self._watches:
                     if watch in self.curframe.f_locals:
                         watch_val = repr(self.curframe.f_locals[watch])
-                        print >> _out, "%s" % ((" watching > %7s" % watch) + " : " + watch_val)
+                        print >> _out, "%s" % ((" watching > %s" % watch) + " : " + watch_val)
 
             if self._show_vars:
                 print >> _out, self._delimiter 
@@ -134,7 +172,7 @@ class KRT(bdb.Bdb, object):
                     if vari in self.curframe.f_locals:
                         label = "locals" if i == 0 else "      "
                         var_val = repr(self.curframe.f_locals[vari])
-                        print >> _out, "%s" % (("   %s > %7s" % (label, vari)) + " : " + var_val)
+                        print >> _out, "%s" % (("   %s > %s" % (label, vari)) + " : " + var_val)
                         i += 1
                 if i == 0:
                     print >> _out, "   locals > " 
@@ -145,7 +183,7 @@ class KRT(bdb.Bdb, object):
                 i = 0
                 while rec.f_back:
                     label = "stack" if i == 0 else "     "
-                    print >> _out, "    %s > %7s" % (label, str(rec.f_lineno)) + " : " + self.get_line(rec.f_lineno, rec.f_code.co_filename).strip()
+                    print >> _out, "    %s > %6s" % (label, str(rec.f_lineno)) + " : " + self.get_line(rec.f_lineno, rec.f_code.co_filename).strip()
                     rec = rec.f_back
                     i += 1
             
@@ -182,27 +220,38 @@ class KRT(bdb.Bdb, object):
                         print >> _out, s + '\t' + line,
 
                 print >> _out, self._delimiter 
+                print >> _out, "  disp id > %s" % self._dispatch_counter
+                print >> _out, self._delimiter
 
             if not self._show_code:
                 print >> _out, "%s" % ("  current >" + self._curr)
                 print >> _out, self._delimiter
 
         else:
-            print >> _out, "not implemented, yet."
+            print >> _out, "--- program output ---\n"
+            for line in _obuff.getvalue().split('\n'):
+                if line.strip():
+                    print >> _out, line 
+            print >> _out, "\n-------- end ---------"
 
     def jump_handler(self, frame):
+        if self._jump_to_dispatch:
+            if self._jump_to_dispatch_id == self._dispatch_counter:
+                self._jumping = False
+                self._jump_to_dispatch = False
         c_file =self.canonic(frame.f_code.co_filename)
-        print c_file, self._jump_file, frame.f_lineno, self._jump_line_no
         if frame.f_lineno == self._jump_line_no and c_file == self._jump_file:
             self._jumping = False
         self.set_step()
         return not self._jumping
 
     def user_call(self, frame, args):
+        self._dispatch_counter += 1
         if self._jumping:
             st = self.jump_handler(frame)
             if not st:
                 return
+
         if self._wait:
             return
         self._vars = frame.f_code.co_varnames
@@ -214,9 +263,14 @@ class KRT(bdb.Bdb, object):
         self.prompt(frame)
 
     def user_line(self, frame):
+        self._dispatch_counter += 1
         if self._jumping:
             st = self.jump_handler(frame)
             if not st:
+                if self._verbose_jump:
+                    self.curframe = frame
+                    self.update_ui()
+                    sleep(0.1)
                 return
         if self._wait:
             if self._scriptfile != self.canonic(frame.f_code.co_filename):
@@ -231,6 +285,7 @@ class KRT(bdb.Bdb, object):
         self.prompt(frame)
 
     def user_return(self, frame, retval):
+        self._dispatch_counter += 1
         if self._jumping:
             st = self.jump_handler(frame)
             if not st:
@@ -242,6 +297,7 @@ class KRT(bdb.Bdb, object):
         self.prompt(frame)
 
     def user_exception(self, frame, exc_stuff):
+        self._dispatch_counter += 1
         if self._jumping:
             st = self.jump_handler(frame)
             if not st:
@@ -254,7 +310,7 @@ class KRT(bdb.Bdb, object):
     def prompt(self, f):
         self.curframe = f
         self.update_ui()
-        args = raw_input("  $ ")
+        args = raw_input()
         line = args
         args = args.split(" ")
         cmd = args.pop(0)
@@ -350,25 +406,48 @@ class KRT(bdb.Bdb, object):
 
     def do_jump(self, *args):
         script_file = None
+        verbose = False
         try:
-            if len(args) < 2:
-                line_no = int(args[0])
-            else:
-                script_file, line_no = args
-                line_no = int(line_no)
-        except (ValueError, IndexError):
-            self._error_msg = "Usage: jump [<file>] <line>"
-            self.prompt(self.curframe)
-            return
-    
-        line = self.get_line(line_no, script_file).strip()
-        if line != '':
-            self._jump_line_no = line_no
-            self._jump_file = self.canonic(self.curframe.f_code.co_filename)
-            self._jumping = True
+            try:
+                if len(args) == 1:
+                    line_no = args[0]
 
-        else:
-            self._error_msg = "Cannot jump on empty line."
+                elif len(args) == 2:
+                    script_file, line_no = args
+
+                else:
+                    sciprt_file, line_no, verbose = args
+
+                line_no = int(line_no)
+                verbose = bool(verbose)
+
+            except (ValueError, IndexError):
+                self._error_msg = "Usage: jump [<file>] <line>"
+                self.prompt(self.curframe)
+                return
+           
+            self._verbose_jump = verbose
+            if script_file:
+                if script_file.strip() == "disp":
+                    self._jump_to_dispatch = True
+                    self._jumping = True
+                    self._jump_to_dispatch_id = int(line_no)
+                    return
+            
+            if script_file == '.':
+                script_file = None
+
+            line = self.get_line(line_no, script_file).strip()
+            if line != '':
+                self._jump_line_no = line_no
+                self._jump_file = self.canonic(self.curframe.f_code.co_filename)
+                self._jumping = True
+
+            else:
+                self._error_msg = "Cannot jump on empty line."
+                self.prompt(self.curframe)
+
+        except Exception as e:
             self.prompt(self.curframe)
 
     do_j = do_jump
@@ -430,6 +509,28 @@ class KRT(bdb.Bdb, object):
             pprint(self.__dict__)
 
     do_b = do_brake
+
+    def run(self, cmd, globals=None, locals=None):
+        if globals is None:
+            import __main__
+            globals = __main__.__dict__
+        if locals is None:
+            locals = globals
+        self.reset()
+        sys.settrace(self.trace_dispatch)
+        if not isinstance(cmd, bdb.types.CodeType):
+            cmd = cmd+'\n'
+        try:
+            _tmp = sys.stdout
+            sys.stdout = _obuff 
+            exec cmd in globals, locals
+        except bdb.BdbQuit:
+            print
+        finally:
+            sys.stdout = _tmp
+            _obuff.close()
+            self.quitting = 1
+            sys.settrace(None)
 
 
 def run(_script):

@@ -39,6 +39,7 @@ def main():
     sm = do_sum(array)
     print "output"
     cuc = CompletelyUselessClass(4)
+    enourmously_long_variable_name = "1.234567890"
     mx = do_max(array)
     v = mx / float(sm)
     print """
