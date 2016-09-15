@@ -1,4 +1,6 @@
 
+import pdb
+import os
 # commentary
 # TODO: nothing
 # ipdb: or other token
@@ -11,7 +13,7 @@ def do_max(_array):
     return val
 
 
-def do_sum(_array):
+def do_sum(_array, *args, **kwargs):
     val = 0
     for i in _array:
         val += i

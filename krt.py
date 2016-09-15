@@ -1,19 +1,17 @@
+#! /usr/bin/env python
+
 import bdb
-import inspect
-import time
-import os
 import sys
 import subprocess
-import linecache
-from collections import deque
-import cStringIO
+from linecache import getline
 
-_stream = cStringIO.StringIO()
+__all__ = ['run', 'track']
+__version__ = 0.1
+__author__ = "nthe | Juraj Onuska | 2016"
 
-# TODO: 
-# - call dispatch doesn't show args
-# - python repl for code of block
-# - - proper output capture / redirection
+# TODO:
+# - proper repl
+# - handle prints / outputs
 
 _out = sys.stdout
 _in = sys.stdin
@@ -24,10 +22,10 @@ _max_output_buffer_size = 100
 _code_section_height = 20
 
 _small_help = """\
-  [ ]next  [s]tep-in  [r]eturn  [c]ontinue  [q]uit
-"""
+  [ ]next  [s]tep-in  [r]eturn  [c]ontinue  [q]uit"""
 
-_full_help = """\
+_full_help = """
+
  [ ]next (enter pressed)    Evaluate current line and go to next line.
  [q]uit                     Leave debugger.
  [s]tep-in                  Step inside if callable, else go to next line.
@@ -40,8 +38,7 @@ _full_help = """\
  [v]ars                     Show / hide local variables.
  [st]ack                    Show / hide current stack of stack frames.
  [co]de                     Show / hide code display.
- [h]elp                     Display small / large help panel.
- """
+ [h]elp                     Display small / large help panel."""
 
 if _pf == 'darwin':
     CLEAR = 'clear'
@@ -80,14 +77,13 @@ else:
         return _W, _H
 
 
-class Ipdb(bdb.Bdb, object):
+class KRT(bdb.Bdb, object):
     """ Simple, small, interactive, console-based Python debugger."""
 
     def __init__(self):
         self._curr = " " + repr(None)
         self._vars = []
         self._watches = []
-        self._output_buffer = deque([], maxlen=_max_output_buffer_size)
         self._error_msg = repr(None)
         self._show_vars = False
         self._show_stack = False
@@ -101,31 +97,30 @@ class Ipdb(bdb.Bdb, object):
         self._scriptfile = None
         self.curframe = None
         self._prev = None
-        self.ui = ""
-        self.lino_no = 0
         self._w = 80
         self._h = 25
-        super(Ipdb, self).__init__()
+        self._delimiter = ""
+        super(KRT, self).__init__()
 
     def handle_resize(self):
         self._w, self._h = _resize_handler()
+        self._delimiter = " %s " % ("-" * (self._w - 2))
 
     def get_line(self, line_no=None, filename=None):
         if line_no is None:
             line_no = self.curframe.f_lineno
         if filename is None:
             filename = self.curframe.f_code.co_filename
-        return linecache.getline(filename, line_no, self.curframe.f_globals)
+        return getline(filename, line_no, self.curframe.f_globals)
 
     def update_ui(self):
-        os.system(CLEAR)
+        subprocess.Popen([CLEAR], shell=True)
         self.handle_resize()
         print 
+        print >> _out, "      KRT >  ",
+        print >> _out, _full_help if self._show_help else _small_help
+        print 
         if not self._show_output:
-            print >> _out, "%s" % (" previous >" + self._prev)
-            if not self._show_code:
-                print >> _out, "%s" % ("  current >" + self._curr)
-
             if any([watch in self.curframe.f_locals for watch in self._watches]):
                 for watch in self._watches:
                     if watch in self.curframe.f_locals:
@@ -133,6 +128,7 @@ class Ipdb(bdb.Bdb, object):
                         print >> _out, "%s" % ((" watching > %7s" % watch) + " : " + watch_val)
 
             if self._show_vars:
+                print >> _out, self._delimiter 
                 i = 0
                 for vari in self._vars:
                     if vari in self.curframe.f_locals:
@@ -140,8 +136,11 @@ class Ipdb(bdb.Bdb, object):
                         var_val = repr(self.curframe.f_locals[vari])
                         print >> _out, "%s" % (("   %s > %7s" % (label, vari)) + " : " + var_val)
                         i += 1
+                if i == 0:
+                    print >> _out, "   locals > " 
 
             if self._show_stack:
+                print >> _out, self._delimiter
                 rec = self.curframe
                 i = 0
                 while rec.f_back:
@@ -149,10 +148,15 @@ class Ipdb(bdb.Bdb, object):
                     print >> _out, "    %s > %7s" % (label, str(rec.f_lineno)) + " : " + self.get_line(rec.f_lineno, rec.f_code.co_filename).strip()
                     rec = rec.f_back
                     i += 1
+            
+            print >> _out, self._delimiter
 
-            print >> _out, "    error > %s\n" % self._error_msg
-            print >> _out, _full_help if self._show_help else _small_help
+            print >> _out, "    error > %s" % self._error_msg
             prev = self.curframe.f_back
+            
+            print >> _out, self._delimiter
+            print >> _out, "%s" % (" previous >" + self._prev)
+            print >> _out, self._delimiter
 
             if self._show_code:
                 first = max(1, self.curframe.f_lineno - (_code_section_height / 2))
@@ -176,15 +180,18 @@ class Ipdb(bdb.Bdb, object):
                         if line_no == self.curframe.f_lineno:
                             s += '~>'
                         print >> _out, s + '\t' + line,
-                        self.lino_no = line_no
 
-            print 
-            #print >> _out, self._output_buffer
+                print >> _out, self._delimiter 
+
+            if not self._show_code:
+                print >> _out, "%s" % ("  current >" + self._curr)
+                print >> _out, self._delimiter
+
         else:
             print >> _out, "not implemented, yet."
 
     def jump_handler(self, frame):
-        c_file = self.canonic(frame.f_code.co_filename)
+        c_file =self.canonic(frame.f_code.co_filename)
         print c_file, self._jump_file, frame.f_lineno, self._jump_line_no
         if frame.f_lineno == self._jump_line_no and c_file == self._jump_file:
             self._jumping = False
@@ -218,7 +225,7 @@ class Ipdb(bdb.Bdb, object):
                 self._wait = False
         self._vars = frame.f_code.co_varnames
         fn = self.canonic(frame.f_code.co_filename)
-        line = linecache.getline(fn, frame.f_lineno, frame.f_globals)
+        line = getline(fn, frame.f_lineno, frame.f_globals)
         self._prev = self._curr
         self._curr = ' executed [%s] %s' % (frame.f_lineno, line.strip())
         self.prompt(frame)
@@ -247,22 +254,25 @@ class Ipdb(bdb.Bdb, object):
     def prompt(self, f):
         self.curframe = f
         self.update_ui()
-        args = raw_input(" $ ")
+        args = raw_input("  $ ")
         line = args
         args = args.split(" ")
         cmd = args.pop(0)
         try:
             if cmd is not None:
                 getattr(self, 'do_' + cmd)(*args)
+
         except AttributeError:
             try:
                 print >> _out
                 self.execute(line)
                 if "print" in line:
-                    raw_input('\n\t< end >')
+                    raw_input()
                 self.prompt(f)
+
             except Exception as e:
                 self.prompt(f)
+
         finally:
             pass
 
@@ -299,6 +309,19 @@ class Ipdb(bdb.Bdb, object):
         self.prompt(self.curframe)
 
     do_co = do_code
+
+    def do_resize(self, *args):
+        global _code_section_height
+        if len(args) < 2:
+            if int(args[0]) < 1:
+                self._error_msg = "Usage: resize <int: size>"
+            else:
+                _code_section_height = int(args[0])
+        else:
+            self._error_msg = "Usage: resize <int: size>"
+        self.prompt(self.curframe)
+
+    do_re = do_resize
 
     def do_clear(self, *args):
         pass
@@ -411,7 +434,7 @@ class Ipdb(bdb.Bdb, object):
 
 def run(_script):
     import __main__
-    ip = Ipdb()
+    ip = KRT()
     ip._wait = True
     ip._scriptfile = ip.canonic(_script)
     statement = "execfile(%r)" % _script
@@ -420,7 +443,7 @@ def run(_script):
 
 def track():
     try:
-        Ipdb().set_trace(sys._getframe().f_back)
+        KRT().set_trace(sys._getframe().f_back)
     except (AttributeError, bdb.BdbQuit):
         print >> _out, " bye."
 

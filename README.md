@@ -1,2 +1,5 @@
-# ipdb
-Simple, console-based Python debugger.
+# krt
+
+___Simple, small, interactive, console-based Python debugger.___
+
+
