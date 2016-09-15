@@ -1,5 +1,7 @@
 #! /usr/bin/env python
 
+""" Simple, small, interactive, console-based Python program debugger. """
+
 from time import sleep
 import bdb
 import sys
@@ -9,7 +11,7 @@ from linecache import getline
 
 __all__ = ['run', 'track']
 __version__ = 0.1
-__author__ = "nthe | Juraj Onuska | 2016"
+__author__ = "Juraj Onuska"
 
 _obuff = cStringIO.StringIO()
 _out = sys.stdout
@@ -221,7 +223,7 @@ class KRT(bdb.Bdb, object):
 
                 print >> _out, self._delimiter 
                 print >> _out, "  disp id > %s" % self._dispatch_counter
-                print >> _out, self._delimiter
+                print >> _out, self._delimiter + "\n  $ ",
 
             if not self._show_code:
                 print >> _out, "%s" % ("  current >" + self._curr)
@@ -263,26 +265,29 @@ class KRT(bdb.Bdb, object):
         self.prompt(frame)
 
     def user_line(self, frame):
-        self._dispatch_counter += 1
-        if self._jumping:
-            st = self.jump_handler(frame)
-            if not st:
-                if self._verbose_jump:
-                    self.curframe = frame
-                    self.update_ui()
-                    sleep(0.1)
-                return
-        if self._wait:
-            if self._scriptfile != self.canonic(frame.f_code.co_filename):
-                return
-            else:
-                self._wait = False
-        self._vars = frame.f_code.co_varnames
-        fn = self.canonic(frame.f_code.co_filename)
-        line = getline(fn, frame.f_lineno, frame.f_globals)
-        self._prev = self._curr
-        self._curr = ' executed [%s] %s' % (frame.f_lineno, line.strip())
-        self.prompt(frame)
+        try:
+            self._dispatch_counter += 1
+            if self._jumping:
+                st = self.jump_handler(frame)
+                if not st:
+                    if self._verbose_jump:
+                        self.curframe = frame
+                        self.update_ui()
+                        sleep(0.1)
+                    return
+            if self._wait:
+                if self._scriptfile != self.canonic(frame.f_code.co_filename):
+                    return
+                else:
+                    self._wait = False
+            self._vars = frame.f_code.co_varnames
+            fn = self.canonic(frame.f_code.co_filename)
+            line = getline(fn, frame.f_lineno, frame.f_globals)
+            self._prev = self._curr
+            self._curr = ' executed [%s] %s' % (frame.f_lineno, line.strip())
+            self.prompt(frame)
+        except Exception as e:
+            print >> _out, e
 
     def user_return(self, frame, retval):
         self._dispatch_counter += 1
