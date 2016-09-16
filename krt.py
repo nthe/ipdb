@@ -9,11 +9,10 @@ import subprocess
 import cStringIO
 from linecache import getline
 
-__all__ = ['run', 'track']
+__all__ = ['run', 'track', 'debug', 'check_flag']
 __version__ = 0.1
 __author__ = "Juraj Onuska"
 
-_obuff = cStringIO.StringIO()
 _out = sys.stdout
 _in = sys.stdin
 _pf = sys.platform.lower()
@@ -119,6 +118,7 @@ class KRT(bdb.Bdb, object):
         self._curr = " " + repr(None)
         self._vars = []
         self._watches = []
+        self._obuff = cStringIO.StringIO()
         self._error_msg = repr(None)
         self._show_vars = False
         self._show_stack = False
@@ -231,7 +231,7 @@ class KRT(bdb.Bdb, object):
 
         else:
             print >> _out, "--- program output ---\n"
-            for line in _obuff.getvalue().split('\n'):
+            for line in self._obuff.getvalue().split('\n'):
                 if line.strip():
                     print >> _out, line 
             print >> _out, "\n-------- end ---------"
@@ -527,36 +527,75 @@ class KRT(bdb.Bdb, object):
             cmd = cmd+'\n'
         try:
             _tmp = sys.stdout
-            sys.stdout = _obuff 
+            sys.stdout = self._obuff 
             exec cmd in globals, locals
         except bdb.BdbQuit:
             print
         finally:
+            self._obuff.close()
             sys.stdout = _tmp
-            _obuff.close()
             self.quitting = 1
             sys.settrace(None)
 
 
-def run(_script):
+def run(_script, *args):
+    """ Run debugger from console via -m (module) switch."""
     import __main__
     ip = KRT()
     ip._wait = True
     ip._scriptfile = ip.canonic(_script)
     statement = "execfile(%r)" % _script
+    if len(args) > 0:
+        ip._jumping = True
+        ip._jump_file = ip._scriptfile
+        ip._jump_line_no = int(args[0]) 
     ip.run(statement)
+    if ip._jumping:
+        ip._error_msg = "Cannot jump on that line."
+        ip._jumping = False
+        ip.run(statement)
 
 
-def track():
+def trace():
+    """ Start debugging on line calling this function. """
     try:
         KRT().set_trace(sys._getframe().f_back)
     except (AttributeError, bdb.BdbQuit):
         print >> _out, " bye."
 
 
+def debug(trigger):
+    """ Krt version of breakpoint is decorator.
+    :param trigger: Any variable, which will be checked for truth.
+                    Trigger can be set to variable in django's settings
+                    file to be able to debug django application.
+    """
+    def wrapper(func):
+        def wrapped(*args, **kwargs):
+            try:
+                _is_set = bool(trigger)
+            except ValueError:
+                _is_set = False
+            if _is_set:
+                _k = KRT()
+                _k.set_trace(sys._getframe().f_back)
+            return func(*args, **kwargs)
+        return wrapped
+    return wrapper
+    
+
+def check_flag():
+    """ Returns True, if django was run with --krt flag. """ 
+    import sys
+    args = filter(lambda arg: arg.strip() == '--krt', sys.argv[1:])
+    if len(args) > 0:
+        return True
+    return False
+
+
 if __name__ == "__main__":
-    if len(sys.argv) != 2:
+    if len(sys.argv) < 2:
         print " usage: python {} <script.py>".format(__file__)
         sys.exit(1)
-    run(sys.argv[1])
+    run(sys.argv[1], *sys.argv[2:])
 
