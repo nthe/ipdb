@@ -4,6 +4,8 @@
  - Cross-platform
  - Django compatibile
 
+<br>
+
 __KRT__ inherits from basic python debugger (called `bdb`). The main reason behind development of package was need of user interface during python script debugging in console (or when graphical interface is not available). Although `pdb` have the same (and propbably much more) functionality, I found it not so "user friendly".
 
 <br>
@@ -57,6 +59,51 @@ def func(_something, _nothing):
   return anything
 ```
 
+<br>
+
+__Django usage__
+
+One can use methods mentioned above, but method below allows __krt__ triggering only if run with pre-defined django command.
+
+##### Setting up django command
+1. Inside django applicaiton directory, create directory called `management`, inside which create directory `commands`.
+   Following path, must exists `django_project/application/management/commands/`.
+2. Create `__init__.py` inside `management` and `commands` directories.
+3. Inside directory `commands`, create file `<command>.py`, where `<command>` will be used with `manage.py`.
+   Let's say that we've used `krt_runserver.py`.
+4. Insert into created file:
+```python
+ from django.core.management.base import BaseCommand
+ from django.core.management.commands import runserver
+
+ class Command(runserver.Command):
+     help = "Sets trigger for krt decorators"
+
+     def __init__(self, *args, **kwargs):
+         from django.conf import settings
+         setattr(settings, 'krt_django_decorator_trigger_flag', True)
+         super(Command, self).__init__(*args, **kwargs)
+```
+<br>
+
+##### Use decorator inside view
+
+Decorator, when used in django project, requires setting of keyword argument `django` to `True`.
+
+```python
+ from django.http import HttpResponse
+ from  krttest.krt import debug
+
+ @debug(django=True)
+ def index(request):
+     return HttpResponse("I'm ok.")
+```
+<br>
+
+Now, when the django server is run with created command, __KRT__ debugger is being initialized on 1st line of view, otherwise the decorators are being ignored.
+```code
+python ./manage.py krt_runserver
+```
 <br>
 
 __Key controls and commands__
