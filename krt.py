@@ -4,12 +4,13 @@
 
 from time import sleep
 import bdb
+import os
 import sys
 import subprocess
 import cStringIO
 from linecache import getline
 
-__all__ = ['run', 'track', 'debug', 'check_flag']
+__all__ = ['run', 'trace', 'debug']
 __version__ = 0.1
 __author__ = "Juraj Onuska"
 
@@ -151,6 +152,20 @@ class KRT(bdb.Bdb, object):
         if filename is None:
             filename = self.curframe.f_code.co_filename
         return getline(filename, line_no, self.curframe.f_globals)
+    
+    def canonic(self, filename):
+        try:
+            if filename == "<" + filename[1:-1] + ">":
+                return filename
+            canonic = self.fncache.get(filename)
+            if not canonic:
+                canonic = os.path.abspath(filename)
+                canonic = os.path.normcase(canonic)
+                self.fncache[filename] = canonic
+            return canonic
+        
+        except AttributeError:
+            pass
 
     def update_ui(self):
         subprocess.Popen([CLEAR], shell=True)
@@ -531,6 +546,8 @@ class KRT(bdb.Bdb, object):
             exec cmd in globals, locals
         except bdb.BdbQuit:
             print
+        except AttributeError:
+            pass
         finally:
             self._obuff.close()
             sys.stdout = _tmp
@@ -564,7 +581,7 @@ def trace():
         print >> _out, " bye."
 
 
-def debug(trigger):
+def debug(django=False):
     """ Krt version of breakpoint is decorator.
     :param trigger: Any variable, which will be checked for truth.
                     Trigger can be set to variable in django's settings
@@ -572,10 +589,14 @@ def debug(trigger):
     """
     def wrapper(func):
         def wrapped(*args, **kwargs):
-            try:
-                _is_set = bool(trigger)
-            except ValueError:
-                _is_set = False
+            if django:
+                try:
+                    from django.conf import settings
+                    _is_set = getattr(settings, 'krt_django_decorator_trigger_flag')
+                except (ImportError, AttributeError):
+                    _is_set = False
+            else:
+                _is_set = True
             if _is_set:
                 _k = KRT()
                 _k.set_trace(sys._getframe().f_back)
@@ -583,15 +604,6 @@ def debug(trigger):
         return wrapped
     return wrapper
     
-
-def check_flag():
-    """ Returns True, if django was run with --krt flag. """ 
-    import sys
-    args = filter(lambda arg: arg.strip() == '--krt', sys.argv[1:])
-    if len(args) > 0:
-        return True
-    return False
-
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:

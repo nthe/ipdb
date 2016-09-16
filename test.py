@@ -4,8 +4,6 @@
 # ipdb: or other token
 import krt
 
-_trig = krt.check_flag()
-
 def do_max(_array):
     val = 0
     for i in _array:
@@ -20,7 +18,7 @@ def do_sum(_array, *args, **kwargs):
         val += i
     return val
 
-@krt.debug(_trig)
+@krt.debug()
 class CompletelyUselessClass(object):
 
     def __init__(self, _something):
