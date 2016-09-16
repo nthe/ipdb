@@ -10,7 +10,7 @@ __KRT__ inherits from basic python debugger (called `bdb`). The main reason behi
 
 <br>
 
-__Installation__
+###__Installation__
 
 Install using `pip`.
 
@@ -20,7 +20,7 @@ pip install krt
 
 <br>
 
-__Basic script debugging__
+##__Basic script debugging__
 ```code
 python krt.py script.py
 # or
@@ -29,7 +29,7 @@ python -m krt script.py
  
  <br>
  
-__Initializing debugger during program execution__
+###__Initializing debugger during program execution__
 
 This method of initialization allows initialization at specific line.
 
@@ -61,7 +61,7 @@ def func(_something, _nothing):
 
 <br>
 
-__Django usage__
+##__Django usage__
 
 One can use methods mentioned above, but method below allows __krt__ triggering only if run with pre-defined django command.
 
