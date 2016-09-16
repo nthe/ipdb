@@ -534,6 +534,8 @@ class KRT(bdb.Bdb, object):
         if globals is None:
             import __main__
             globals = __main__.__dict__
+            globals['__name__'] == "__main__"
+            print globals
         if locals is None:
             locals = globals
         self.reset()

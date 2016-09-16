@@ -3,7 +3,8 @@
 # TODO: nothing
 # ipdb: or other token
 import krt
-
+print __name__
+print globals()
 def do_max(_array):
     val = 0
     for i in _array:
@@ -18,7 +19,7 @@ def do_sum(_array, *args, **kwargs):
         val += i
     return val
 
-@krt.debug()
+#@krt.debug()
 class CompletelyUselessClass(object):
 
     def __init__(self, _something):
