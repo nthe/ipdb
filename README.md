@@ -88,7 +88,7 @@ One can use methods mentioned above, but method below allows __krt__ triggering 
 
 ##### Use decorator inside view
 
-Decorator, when used in django project, requires setting of keyword argument `django` to `True`.
+Decorator, when used in django project, requires setting of keyword argument `django` to `True`. If the `django` argument is omitted, the debugger will be __always initialized__!
 
 ```python
  from django.http import HttpResponse
