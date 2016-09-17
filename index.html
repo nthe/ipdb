@@ -1,0 +1,198 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="chrome=1">
+    <title>Krt by nthe</title>
+
+    <link rel="stylesheet" href="stylesheets/styles.css">
+    <link rel="stylesheet" href="stylesheets/github-light.css">
+    <meta name="viewport" content="width=device-width">
+    <!--[if lt IE 9]>
+    <script src="//html5shiv.googlecode.com/svn/trunk/html5.js"></script>
+    <![endif]-->
+  </head>
+  <body>
+    <div class="wrapper">
+      <header>
+        <h1>Krt</h1>
+        <p>Simple, console-based Python debugger.</p>
+
+        <p class="view"><a href="https://github.com/nthe/krt">View the Project on GitHub <small>nthe/krt</small></a></p>
+
+
+        <ul>
+          <li><a href="https://github.com/nthe/krt/zipball/master">Download <strong>ZIP File</strong></a></li>
+          <li><a href="https://github.com/nthe/krt/tarball/master">Download <strong>TAR Ball</strong></a></li>
+          <li><a href="https://github.com/nthe/krt">View On <strong>GitHub</strong></a></li>
+        </ul>
+      </header>
+      <section>
+        <h1>
+<a id="krt" class="anchor" href="#krt" aria-hidden="true"><span aria-hidden="true" class="octicon octicon-link"></span></a>KRT</h1>
+
+<h3>
+<a id="simple-small-interactive-console-based-python-debugger" class="anchor" href="#simple-small-interactive-console-based-python-debugger" aria-hidden="true"><span aria-hidden="true" class="octicon octicon-link"></span></a><strong>Simple, small, interactive, console-based Python debugger.</strong>
+</h3>
+
+<ul>
+<li>Cross-platform</li>
+<li>Django compatibile</li>
+</ul>
+
+<p><br></p>
+
+<p><strong>KRT</strong> inherits from basic python debugger (called <code>bdb</code>). The main reason behind development of package was need of user interface during python script debugging in console (or when graphical interface is not available). Although <code>pdb</code> have the same (and propbably much more) functionality, I found it not so "user friendly".</p>
+
+<p><br></p>
+
+<h3>
+<a id="installation" class="anchor" href="#installation" aria-hidden="true"><span aria-hidden="true" class="octicon octicon-link"></span></a><strong>Installation</strong>
+</h3>
+
+<p>Install using <code>pip</code>.</p>
+
+<pre lang="code"><code>pip install krt
+</code></pre>
+
+<p><br></p>
+
+<h2>
+<a id="basic-script-debugging" class="anchor" href="#basic-script-debugging" aria-hidden="true"><span aria-hidden="true" class="octicon octicon-link"></span></a><strong>Basic script debugging</strong>
+</h2>
+
+<pre lang="code"><code>python krt.py script.py
+# or
+python -m krt script.py
+</code></pre>
+
+<p><br></p>
+
+<h3>
+<a id="initializing-debugger-during-program-execution" class="anchor" href="#initializing-debugger-during-program-execution" aria-hidden="true"><span aria-hidden="true" class="octicon octicon-link"></span></a><strong>Initializing debugger during program execution</strong>
+</h3>
+
+<p>This method of initialization allows initialization at specific line.</p>
+
+<div class="highlight highlight-source-python"><pre><span class="pl-k">import</span> krt
+
+<span class="pl-k">def</span> <span class="pl-en">func</span>(<span class="pl-smi">_something</span>, <span class="pl-smi">_nothing</span>):
+  local_var <span class="pl-k">=</span> [<span class="pl-c1">1</span>, <span class="pl-c1">2</span>, <span class="pl-c1">3</span>, <span class="pl-c1">4</span>]
+  <span class="pl-c"># now, initialize krt</span>
+  krt.trace()                   
+  anything <span class="pl-k">=</span> _somethins <span class="pl-k">+</span> _nothing
+  <span class="pl-k">return</span> anything</pre></div>
+
+<p><br></p>
+
+<p>Initializing <strong>krt</strong> via <strong><a href="https://github.com/decorator" class="user-mention">@decorator</a></strong>. This method will initialize <strong>krt</strong> at 1st line of decorated method or function.</p>
+
+<div class="highlight highlight-source-python"><pre><span class="pl-k">import</span> krt
+
+<span class="pl-c"># initialize krt</span>
+<span class="pl-en">@krt.debug</span>()
+<span class="pl-k">def</span> <span class="pl-en">func</span>(<span class="pl-smi">_something</span>, <span class="pl-smi">_nothing</span>):
+  local_var <span class="pl-k">=</span> [<span class="pl-c1">1</span>, <span class="pl-c1">2</span>, <span class="pl-c1">3</span>, <span class="pl-c1">4</span>]
+  anything <span class="pl-k">=</span> _somethins <span class="pl-k">+</span> _nothing
+  <span class="pl-k">return</span> anything</pre></div>
+
+<p><br></p>
+
+<h2>
+<a id="django-usage" class="anchor" href="#django-usage" aria-hidden="true"><span aria-hidden="true" class="octicon octicon-link"></span></a><strong>Django usage</strong>
+</h2>
+
+<p>One can use methods mentioned above, but method below allows <strong>krt</strong> triggering only if run with pre-defined django command.</p>
+
+<h5>
+<a id="setting-up-django-command" class="anchor" href="#setting-up-django-command" aria-hidden="true"><span aria-hidden="true" class="octicon octicon-link"></span></a>Setting up django command</h5>
+
+<ol>
+<li>Inside django applicaiton directory, create directory called <code>management</code>, inside which create directory <code>commands</code>.
+Following path, must exists <code>django_project/application/management/commands/</code>.</li>
+<li>Create <code>__init__.py</code> inside <code>management</code> and <code>commands</code> directories.</li>
+<li>Inside directory <code>commands</code>, create file <code>&lt;command&gt;.py</code>, where <code>&lt;command&gt;</code> will be used with <code>manage.py</code>.
+Let's say that we've used <code>krt_runserver.py</code>.</li>
+<li>Insert into created file:</li>
+</ol>
+
+<div class="highlight highlight-source-python"><pre> <span class="pl-k">from</span> django.core.management.base <span class="pl-k">import</span> BaseCommand
+ <span class="pl-k">from</span> django.core.management.commands <span class="pl-k">import</span> runserver
+
+ <span class="pl-k">class</span> <span class="pl-en">Command</span>(<span class="pl-e">runserver</span>.<span class="pl-e">Command</span>):
+     <span class="pl-c1">help</span> <span class="pl-k">=</span> <span class="pl-s"><span class="pl-pds">"</span>Sets trigger for krt decorators<span class="pl-pds">"</span></span>
+
+     <span class="pl-k">def</span> <span class="pl-c1">__init__</span>(<span class="pl-smi"><span class="pl-smi">self</span></span>, <span class="pl-k">*</span><span class="pl-smi">args</span>, <span class="pl-k">**</span><span class="pl-smi">kwargs</span>):
+         <span class="pl-k">from</span> django.conf <span class="pl-k">import</span> settings
+         <span class="pl-c1">setattr</span>(settings, <span class="pl-s"><span class="pl-pds">'</span>krt_django_decorator_trigger_flag<span class="pl-pds">'</span></span>, <span class="pl-c1">True</span>)
+         <span class="pl-c1">super</span>(Command, <span class="pl-v">self</span>).<span class="pl-c1">__init__</span>(<span class="pl-k">*</span>args, <span class="pl-k">**</span>kwargs)</pre></div>
+
+<p><br></p>
+
+<h5>
+<a id="use-decorator-inside-view" class="anchor" href="#use-decorator-inside-view" aria-hidden="true"><span aria-hidden="true" class="octicon octicon-link"></span></a>Use decorator inside view</h5>
+
+<p>Decorator, when used in django project, requires setting of keyword argument <code>django</code> to <code>True</code>. If the <code>django</code> argument is omitted, the debugger will be <strong>always initialized</strong>!</p>
+
+<div class="highlight highlight-source-python"><pre> <span class="pl-k">from</span> django.http <span class="pl-k">import</span> HttpResponse
+ <span class="pl-k">from</span>  krttest.krt <span class="pl-k">import</span> debug
+
+ <span class="pl-en">@debug</span>(<span class="pl-v">django</span><span class="pl-k">=</span><span class="pl-c1">True</span>)
+ <span class="pl-k">def</span> <span class="pl-en">index</span>(<span class="pl-smi">request</span>):
+     <span class="pl-k">return</span> HttpResponse(<span class="pl-s"><span class="pl-pds">"</span>I'm ok.<span class="pl-pds">"</span></span>)</pre></div>
+
+<p><br></p>
+
+<p>Now, when the django server is run with created command, <strong>KRT</strong> debugger is being initialized on 1st line of view, otherwise the decorators are being ignored.</p>
+
+<pre lang="code"><code>python ./manage.py krt_runserver
+</code></pre>
+
+<p><br></p>
+
+<p><strong>Key controls and commands</strong></p>
+
+<pre lang="text"><code>  [ ]next (enter pressed)    Evaluate current line and go to next line.
+  [s]tep-in                  Step inside if callable, else go to next line.
+  [r]eturn                   Return from call to outer frame.
+
+  [j]ump [&lt;file&gt;] ['disp'] &lt;line&gt; &lt;verbose&gt;
+
+                             Jump to line in current file. Setting verbose to True or 1
+                             will perform jump in 'visible' mode. This mode can take
+                             certain amount of time to complete. Consider turning off
+                             code display.
+
+                             When 'disp' is stated, the number refers to dispatch number,
+                             counted from beginning of program evaluation. Using dispatch
+                             jumping in combination with line jumping will NOT work.
+
+                             Use '.' as reference to currently debugged file.
+
+                             Examples:
+                                 $ jump . 20
+                                 $ jump disp 3000 True
+                                 $ jump 20
+                                 $ jump disp 300
+
+  [c]ontinue                 Continue evaluation of file.
+  [w]atch &lt;variable&gt;         Add local 'variable' to watches.
+  [u]n-watch &lt;variable&gt;      Remove local 'variable' from watches.
+  [o]utput                   Show / hide output of debugged program (replaces whole ui).
+  [v]ars                     Show / hide local variables.
+  [st]ack                    Show / hide current stack of stack frames.
+  [co]de                     Show / hide code display.
+  [re]size                   Adjust number of lines of code display.
+  [h]elp                     Display small / large help panel.
+  [q]uit                     Leave debugger.
+</code></pre>
+      </section>
+      <footer>
+        <p>This project is maintained by <a href="https://github.com/nthe">nthe</a></p>
+        <p><small>Hosted on GitHub Pages &mdash; Theme by <a href="https://github.com/orderedlist">orderedlist</a></small></p>
+      </footer>
+    </div>
+    <script src="javascripts/scale.fix.js"></script>
+    
+  </body>
+</html>
